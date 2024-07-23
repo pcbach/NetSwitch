@@ -178,7 +178,11 @@ class NetSwitch:
 
         return swt_num if self.total_checkers() == 0 else -1
 
+
     def Havel_Hakimi(self, replace_adj=False):
+        '''Havel-Hakimi Algorithm solution for
+        assembling a graph given a degree sequence.
+        This function returns False if the degree sequence is not graphic.'''
         HH_adj = np.zeros((self.n, self.n))
         sorted_nodes = [i for i in zip(self.deg.copy(), range(self.n))]
         v1 = sorted_nodes[0]
@@ -187,14 +191,17 @@ class NetSwitch:
             if this_degree >= self.n:
                 return False
             else:
+                # Connecting the node with most remaining stubs to those sorted immediately after
                 for v2_idx in range(1, this_degree+1):
                     v2 = sorted_nodes[v2_idx]
+                    # If condition met, the sequence is not graphic
                     if v2[0] == 0:
                         return False
                     else:
                         sorted_nodes[v2_idx] = (v2[0]-1, v2[1])
                         HH_adj[v1[1], v2[1]], HH_adj[v2[1], v1[1]] = 1, 1
                 sorted_nodes[0] = (0, sorted_nodes[0][1])
+                # Re-sorting the nodes based on the count of remaining stubs
                 sorted_nodes = sorted(sorted_nodes, key=lambda x: (x[0], -x[1]), reverse=True)
                 v1 = sorted_nodes[0]
                 this_degree = v1[0]
