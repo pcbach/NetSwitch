@@ -198,7 +198,7 @@ class NetSwitch:
             link_indices = np.where(self.A == 1)
             while True:
                 link1, link2 = np.random.randint(len(link_indices[0]), size=2)
-                swt = np.empty(4)
+                swt = np.empty(4, dtype='int')
                 swt[0], swt[1] = link_indices[0][link1], link_indices[1][link1]
                 swt[2], swt[3] = link_indices[0][link2], link_indices[1][link2]
                 if len(set(swt)) == 4:
@@ -212,6 +212,8 @@ class NetSwitch:
                     self.A[swt[argSort[0]], swt[argSort[1]]], self.A[swt[argSort[1]], swt[argSort[0]]] = 1, 1
                     self.A[swt[argSort[2]], swt[argSort[3]]], self.A[swt[argSort[3]], swt[argSort[2]]] = 1, 1
                     count -= 1
+                    self.swt_done += 1
+                    self.update_N(swt)
             elif self.A[swt[0], swt[3]] == 0 and self.A[swt[1], swt[2]] == 0:
                 # Condition is met to perform the random switch
                 self.A[swt[0], swt[1]], self.A[swt[1], swt[0]] = 0, 0
@@ -219,8 +221,9 @@ class NetSwitch:
                 self.A[swt[0], swt[3]], self.A[swt[3], swt[0]] = 1, 1
                 self.A[swt[1], swt[2]], self.A[swt[2], swt[1]] = 1, 1
                 count -= 1
+                self.swt_done += 1
+                self.update_N(swt)
         return True
-
     def Havel_Hakimi(self, replace_adj=False):
         '''Havel-Hakimi Algorithm solution for
         assembling a graph given a degree sequence.
