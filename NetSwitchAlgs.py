@@ -236,18 +236,23 @@ class NetSwitch:
         return swt_num if self.total_checkers() == 0 else -1
 
     def XBS(self, pos_p=0.5, count=1):
-        if self.swt_done==0:
+        if pos_p == 1.0 and self.swt_done==0:
             self.checkercount_matrix(count_upper=False)
         swt_num = 0
-        while count > 0 and self.total_checkers() > 0:
+        while count > 0 and (self.total_checkers() > 0 or pos_p < 1.0):
             link_indices = np.where(self.A == 1)
             while True:
-                link1, link2 = np.random.randint(len(link_indices[0]), size=2)
-                swt = np.empty(4, dtype='int')
-                swt[0], swt[1] = link_indices[0][link1], link_indices[1][link1]
-                swt[2], swt[3] = link_indices[0][link2], link_indices[1][link2]
-                if len(set(swt)) == 4:
+                if pos_p == 1.0:
+                    swt = self.find_random_checker()
+                    swt = [swt[0], swt[3], swt[1], swt[2]]
                     break
+                else:
+                    link1, link2 = np.random.randint(len(link_indices[0]), size=2)
+                    swt = np.empty(4, dtype='int')
+                    swt[0], swt[1] = link_indices[0][link1], link_indices[1][link1]
+                    swt[2], swt[3] = link_indices[0][link2], link_indices[1][link2]
+                    if len(set(swt)) == 4:
+                        break
             if pos_p > np.random.rand():
                 argSort = np.argsort(swt)
                 if self.A[swt[argSort[0]], swt[argSort[1]]] == 0 and self.A[swt[argSort[2]], swt[argSort[3]]] == 0:
@@ -258,7 +263,8 @@ class NetSwitch:
                     self.A[swt[argSort[2]], swt[argSort[3]]], self.A[swt[argSort[3]], swt[argSort[2]]] = 1, 1
                     count -= 1
                     self.swt_done += 1
-                    self.update_N(swt, count_upper=False)
+                    if pos_p == 1.0:
+                        self.update_N(swt, count_upper=False)
             elif self.A[swt[0], swt[3]] == 0 and self.A[swt[1], swt[2]] == 0:
                 # Condition is met to perform the random switch
                 self.A[swt[0], swt[1]], self.A[swt[1], swt[0]] = 0, 0
@@ -268,8 +274,9 @@ class NetSwitch:
                 count -= 1
                 swt_num += 1
                 self.swt_done += 1
-                self.update_N(swt, count_upper=False)
-        return swt_num if self.total_checkers() == 0 else -1
+                if pos_p == 1.0:
+                    self.update_N(swt, count_upper=False)
+        return swt_num if (pos_p==1.0 and self.total_checkers() == 0) else -1
 
     def Havel_Hakimi(self, replace_adj=False):
         '''Havel-Hakimi Algorithm solution for
