@@ -17,14 +17,14 @@ class NetSwitch:
         self.A = self.A[sortIdx, :][:, sortIdx]
         self.deg = self.deg[sortIdx]
 
-    def checkercount_matrix(self):
+    def checkercount_matrix(self, count_upper=True):
         ''' Builds a matrix N, where element N[i,j] counts
         NEGATIVE checkerboards in row-pair (i, j) of the adjacency matrix A. '''
 
         self.N = np.zeros((self.n, self.n), dtype=np.int64)
         for i in range(self.n - 1):
             for j in range(i + 1, self.n):
-                self.N[i, j] = self.count_rowpair_checkers_fast(i, j)
+                self.N[i, j] = self.count_rowpair_checkers_fast(i, j) - (0 if count_upper else self.count_rowpair_checkers_fast_upperswt(i, j))
         self.Nrow = np.sum(self.N, axis=1)
 
     def count_rowpair_checkers(self, i, j):
@@ -60,17 +60,31 @@ class NetSwitch:
             cumsum_checkers = np.cumsum(np.diff(all_rightsides) - 1)
             return int(all_rightsides[0] * (cumsum_checkers.size + 1) + np.sum(cumsum_checkers))
 
-    def update_N(self, swt):
+    def count_rowpair_checkers_fast_upperswt(self, i, j):
+        '''Similar to self.count_rowpair_checkers_fast(i, j)
+        but only counting the switchings with k, l > i, j
+        i.e., upper trianlge checkerboards'''
+
+        all_checkerboard_sides = i + 1 + np.nonzero(np.triu(self.A)[i, i + 1:] ^ np.triu(self.A)[j, i + 1:])[0]
+        all_checkerboard_sides = np.delete(all_checkerboard_sides, np.where(all_checkerboard_sides == j))
+        all_rightsides = np.nonzero(np.triu(self.A)[i, all_checkerboard_sides])[0]
+        if all_rightsides.size == 0:
+            return int(0)
+        else:
+            cumsum_checkers = np.cumsum(np.diff(all_rightsides) - 1)
+            return int(all_rightsides[0] * (cumsum_checkers.size + 1) + np.sum(cumsum_checkers))
+
+    def update_N(self, swt, count_upper=True):
         ''' Given a checkerboard (i, j, k, l) is switched,
         updates the matrix N that holds counts of checkerboards in matrix A '''
 
         i, j, k, l = swt
         for ref_row in [i, j, k, l]:
             for row in range(ref_row):
-                self.N[row, ref_row] = self.count_rowpair_checkers_fast(row, ref_row)
+                self.N[row, ref_row] = self.count_rowpair_checkers_fast(row, ref_row) - (0 if count_upper else self.count_rowpair_checkers_fast_upperswt(row, ref_row))
                 self.Nrow[row] = np.sum(self.N[row, :])
             for row in range(ref_row + 1, self.n):
-                self.N[ref_row, row] = self.count_rowpair_checkers_fast(ref_row, row)
+                self.N[ref_row, row] = self.count_rowpair_checkers_fast(ref_row, row) - (0 if count_upper else self.count_rowpair_checkers_fast_upperswt(ref_row, row))
                 self.Nrow[ref_row] = np.sum(self.N[ref_row, :])
 
     def total_checkers(self):
@@ -118,6 +132,8 @@ class NetSwitch:
 
     def largest_kl(self, row_i, row_j):
         for left_k in range(row_i + 1, self.n - 1):
+            if left_k == row_j:
+                continue
             if self.A[row_i, left_k] == 0 and self.A[row_j, left_k] == 1:
                 break
         for rght_l in range(self.n - 1, left_k, -1):
@@ -126,6 +142,18 @@ class NetSwitch:
             if self.A[row_i, rght_l] == 1 and self.A[row_j, rght_l] == 0:
                 break
         return left_k, rght_l
+    def largest_ij(self, col_k, col_l):
+        for top_i in range(0, self.n - 3):
+            if top_i == col_k or top_i == col_l:
+                continue
+            if self.A[top_i, col_k] == 0 and self.A[top_i, col_l] == 1:
+                break
+        for bot_j in range(self.n - 1, top_i, -1):
+            if bot_j == col_k or bot_j == col_l:
+                continue
+            if self.A[bot_j, col_k] == 1 and self.A[bot_j, col_l] == 0:
+                break
+        return top_i, bot_j
 
     def next_ij_rowrow(self):
         while self.N[self.i, self.j] == 0:
@@ -175,16 +203,30 @@ class NetSwitch:
                 case 'GRDY':
                     swt = self.find_random_checker()
                     i, j, k, l = swt
+                    search_block = 0
                     while True:
                         new_k, new_l = self.largest_kl(i, j)
                         if new_k == k and new_l ==l:
-                            break
+                            search_block += 1
+                            if search_block == 2:
+                                break
                         else:
-                            k, l, i, j = i, j, new_k, new_l
+                            k, l = new_k, new_l
+                            search_block = 0
+                        new_i, new_j = self.largest_ij(k, l)
+                        if new_i == i and new_j == j:
+                            search_block += 1
+                            if search_block == 2:
+                                break
+                        else:
+                            i, j = new_i, new_j
+                            search_block = 0
+                    #print(swt, i, j, k, l)
+                    swt = i, j, k, l
                 case _:
                     raise Exception("No such switching algorithm!!!")
 
-            i, j, k, l = swt
+            #i, j, k, l = swt
             #print([[self.A[i, k], self.A[i, l]], [self.A[j, k], self.A[j, l]]])
             self.switch(swt)
             self.swt_done += 1
@@ -194,7 +236,10 @@ class NetSwitch:
         return swt_num if self.total_checkers() == 0 else -1
 
     def XBS(self, pos_p=0.5, count=1):
-        while count > 0:
+        if self.swt_done==0:
+            self.checkercount_matrix(count_upper=False)
+        swt_num = 0
+        while count > 0 and self.total_checkers() > 0:
             link_indices = np.where(self.A == 1)
             while True:
                 link1, link2 = np.random.randint(len(link_indices[0]), size=2)
@@ -213,7 +258,7 @@ class NetSwitch:
                     self.A[swt[argSort[2]], swt[argSort[3]]], self.A[swt[argSort[3]], swt[argSort[2]]] = 1, 1
                     count -= 1
                     self.swt_done += 1
-                    self.update_N(swt)
+                    self.update_N(swt, count_upper=False)
             elif self.A[swt[0], swt[3]] == 0 and self.A[swt[1], swt[2]] == 0:
                 # Condition is met to perform the random switch
                 self.A[swt[0], swt[1]], self.A[swt[1], swt[0]] = 0, 0
@@ -221,9 +266,11 @@ class NetSwitch:
                 self.A[swt[0], swt[3]], self.A[swt[3], swt[0]] = 1, 1
                 self.A[swt[1], swt[2]], self.A[swt[2], swt[1]] = 1, 1
                 count -= 1
+                swt_num += 1
                 self.swt_done += 1
-                self.update_N(swt)
-        return True
+                self.update_N(swt, count_upper=False)
+        return swt_num if self.total_checkers() == 0 else -1
+
     def Havel_Hakimi(self, replace_adj=False):
         '''Havel-Hakimi Algorithm solution for
         assembling a graph given a degree sequence.
