@@ -5,11 +5,11 @@ import igraph as ig
 import os.path
 import matplotlib.pyplot as plt
 
-n = 100
-p = 0.4
+n = 500
+p = 0.05
 swt_batch_count = 100
 
-res_fname = "POS_ER_N"+str(int(n))+"_p"+str(int(p*100))+"_bch"+str(swt_batch_count)+".pkl"
+res_fname = "NetPosSwitchingResults/POS_ER_N"+str(int(n))+"_p"+str(int(p*100))+"_bch"+str(swt_batch_count)+".pkl"
 
 if not os.path.isfile(res_fname):
     #RANDOM Switching
