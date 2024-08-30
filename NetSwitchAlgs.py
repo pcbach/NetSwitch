@@ -64,10 +64,11 @@ class NetSwitch:
         '''Similar to self.count_rowpair_checkers_fast(i, j)
         but only counting the switchings with k, l > i, j
         i.e., upper trianlge checkerboards'''
-
-        all_checkerboard_sides = i + 1 + np.nonzero(np.triu(self.A)[i, i + 1:] ^ np.triu(self.A)[j, i + 1:])[0]
+        if j < i:
+            i, j = j, i
+        all_checkerboard_sides = j + 1 + np.nonzero(self.A[i, j + 1:] ^ self.A[j, j + 1:])[0]
         all_checkerboard_sides = np.delete(all_checkerboard_sides, np.where(all_checkerboard_sides == j))
-        all_rightsides = np.nonzero(np.triu(self.A)[i, all_checkerboard_sides])[0]
+        all_rightsides = np.nonzero(self.A[i, all_checkerboard_sides])[0]
         if all_rightsides.size == 0:
             return int(0)
         else:
