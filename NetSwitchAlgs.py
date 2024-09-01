@@ -88,11 +88,30 @@ class NetSwitch:
                 self.N[ref_row, row] = self.count_rowpair_checkers_fast(ref_row, row) - (0 if count_upper else self.count_rowpair_checkers_fast_upperswt(ref_row, row))
                 self.Nrow[ref_row] = np.sum(self.N[ref_row, :])
 
+    def update_B(self, swt):
+        ''' Given a checkerboard (i, j, k, l) is switched,
+        updates the array B that holds size of row-pair checkerboards in matrix A '''
+
+        i, j, k, l = swt
+        for ref_row in [i, j, k, l]:
+            for row in range(ref_row):
+                if self.N[row, ref_row] == 0:
+                    self.B[self.coord2diag(row, ref_row)] = -1
+                else:
+                    lft, rgt = self.largest_kl(row, ref_row)
+                    self.B[self.coord2diag(row, ref_row)] = (ref_row - row) * (rgt - lft)
+            for row in range(ref_row + 1, self.n):
+                if self.N[ref_row, row] == 0:
+                    self.B[self.coord2diag(ref_row, row)] = -1
+                else:
+                    lft, rgt = self.largest_kl(ref_row, row)
+                    self.B[self.coord2diag(ref_row, row)] = (row - ref_row) * (rgt - lft)
+
     def total_checkers(self):
         """Returns the total number of checkerboards left in the adjacency matrix"""
         return np.sum(self.Nrow)
 
-    def switch(self, swt, update_N=True):
+    def switch(self, swt, update_B=False):
         """Switches a selected checkrboard in matrix A and calls for an update in checkerboard count
         given the coordinates (i, j, k, l), the checkerboars is at (i, k), (i, l), (j, k), (j, l)
         and the mirrored coordinates (k, i), (l, i), (k, j), (l, j) in matrix A"""
@@ -102,6 +121,8 @@ class NetSwitch:
         self.A[k, i], self.A[l, i], self.A[k, j], self.A[l, j] = 1 - self.A[k, i], 1 - self.A[l, i], 1 - self.A[
             k, j], 1 - self.A[l, j]
         self.update_N(swt)
+        if update_B:
+            self.update_B(swt)
 
     def find_random_checker(self, pos=True):
         if not pos:
@@ -181,6 +202,54 @@ class NetSwitch:
         ord_k, ord_l = self.largest_kl(self.i, self.j)
         return (self.i, self.j, ord_k, ord_l)
 
+    def coord2diag(self, row, col):
+        csarr = np.cumsum(np.arange(self.n - 1))[::-1]
+        return csarr[col - row - 1] + row
+
+    def diag2coord(self, idx):
+        csarr = np.cumsum(np.arange(1, self.n))
+        diag_idx = np.where(csarr - idx > 0)[0][0]
+        i, j = diag_idx, self.n - 1
+        i -= csarr[diag_idx] - 1 - idx
+        j -= csarr[diag_idx] - 1 - idx
+        return i, j
+
+    def next_best_swt(self):
+        best_area = np.max(self.B)
+        bi, bj = self.diag2coord(np.argmax(self.B))
+        bk, bl = self.largest_kl(bi, bj)
+        best_swt = tuple([bi, bj, bk, bl])
+
+        to_calc = np.where(self.B == 0)[0]
+        if len(to_calc) > 0:
+            diag_ij = to_calc[0]
+            ci, cj = self.diag2coord(diag_ij)
+            row_dist = cj - ci
+
+            while True:
+                best_next = row_dist * (self.n - ci - 2 - (0 if row_dist > 1 else 1))
+                if best_area >= best_next:
+                    break
+                if self.N[ci, cj] == 0:
+                    self.B[diag_ij] = -1
+                elif self.B[diag_ij] == 0:
+                    k, l = self.largest_kl(ci, cj)
+                    swt_area = (cj - ci) * (l - k)
+                    self.B[diag_ij] = swt_area
+                    if swt_area > best_area:
+                        best_swt = tuple([ci, cj, k, l])
+                        best_area = swt_area
+                ci += 1
+                cj += 1
+                if cj == self.n:
+                    row_dist -= 1
+                    if row_dist == 0:
+                        break
+                    ci = 0
+                    cj = ci + row_dist
+                diag_ij += 1
+        return best_swt
+
     def switch_A(self, alg='RAND', count=-1):
         """Performs a number of switchings with a specified algorithm on the adjacency matrix
         The number of switchings to perform is input by the 'count' argument
@@ -201,6 +270,10 @@ class NetSwitch:
                     if self.swt_done == 0:
                         self.i, self.j = 0, self.n - 1
                     swt = self.next_ij_diag()
+                case 'BEST':
+                    if self.swt_done == 0:
+                        self.B = np.zeros(int(self.n * (self.n-1) / 2))
+                    swt = self.next_best_swt()
                 case 'GRDY':
                     swt = self.find_random_checker()
                     i, j, k, l = swt
@@ -229,7 +302,7 @@ class NetSwitch:
 
             #i, j, k, l = swt
             #print([[self.A[i, k], self.A[i, l]], [self.A[j, k], self.A[j, l]]])
-            self.switch(swt)
+            self.switch(swt, update_B=(True if alg=='BEST' else False))
             self.swt_done += 1
             swt_num += 1
             count -= 1
