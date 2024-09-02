@@ -95,17 +95,19 @@ class NetSwitch:
         i, j, k, l = swt
         for ref_row in [i, j, k, l]:
             for row in range(ref_row):
+                diag_idx = self.coord2diag(row, ref_row)
                 if self.N[row, ref_row] == 0:
-                    self.B[self.coord2diag(row, ref_row)] = -1
-                else:
+                    self.B[diag_idx] = -1
+                elif self.B[diag_idx] != 0:
                     lft, rgt = self.largest_kl(row, ref_row)
-                    self.B[self.coord2diag(row, ref_row)] = (ref_row - row) * (rgt - lft)
+                    self.B[diag_idx] = (ref_row - row) * (rgt - lft)
             for row in range(ref_row + 1, self.n):
+                diag_idx = self.coord2diag(ref_row, row)
                 if self.N[ref_row, row] == 0:
-                    self.B[self.coord2diag(ref_row, row)] = -1
-                else:
+                    self.B[diag_idx] = -1
+                elif self.B[diag_idx] != 0:
                     lft, rgt = self.largest_kl(ref_row, row)
-                    self.B[self.coord2diag(ref_row, row)] = (row - ref_row) * (rgt - lft)
+                    self.B[diag_idx] = (row - ref_row) * (rgt - lft)
 
     def total_checkers(self):
         """Returns the total number of checkerboards left in the adjacency matrix"""
@@ -220,34 +222,29 @@ class NetSwitch:
         bk, bl = self.largest_kl(bi, bj)
         best_swt = tuple([bi, bj, bk, bl])
 
-        to_calc = np.where(self.B == 0)[0]
-        if len(to_calc) > 0:
+        while True:
+            to_calc = np.where(self.B == 0)[0]
+            if len(to_calc) == 0: #No row-pair with unknown (not calculated) largest checkerboard
+                break
+
             diag_ij = to_calc[0]
             ci, cj = self.diag2coord(diag_ij)
             row_dist = cj - ci
+            best_possible = row_dist * (self.n - ci - 2 - (0 if row_dist > 1 else 1))
+            if best_area >= best_possible: #The largest already-found checkerboard is unbeatable
+                break
 
-            while True:
-                best_next = row_dist * (self.n - ci - 2 - (0 if row_dist > 1 else 1))
-                if best_area >= best_next:
-                    break
-                if self.N[ci, cj] == 0:
-                    self.B[diag_ij] = -1
-                elif self.B[diag_ij] == 0:
-                    k, l = self.largest_kl(ci, cj)
-                    swt_area = (cj - ci) * (l - k)
-                    self.B[diag_ij] = swt_area
-                    if swt_area > best_area:
-                        best_swt = tuple([ci, cj, k, l])
-                        best_area = swt_area
-                ci += 1
-                cj += 1
-                if cj == self.n:
-                    row_dist -= 1
-                    if row_dist == 0:
-                        break
-                    ci = 0
-                    cj = ci + row_dist
-                diag_ij += 1
+            if self.N[ci, cj] == 0: #No checkerboards for this row-pair
+                self.B[diag_ij] = -1
+                continue
+
+            k, l = self.largest_kl(ci, cj)
+            swt_area = (cj - ci) * (l - k)
+            self.B[diag_ij] = swt_area
+            if swt_area > best_area:
+                best_swt = tuple([ci, cj, k, l])
+                best_area = swt_area
+        #print(self.B, self.total_checkers())
         return best_swt
 
     def switch_A(self, alg='RAND', count=-1):
