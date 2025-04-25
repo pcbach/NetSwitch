@@ -24,7 +24,7 @@ for i in range(S.n):
             ToMatch.add_nodes_from([str(j) + '_' + str(node_copy_idx) for node_copy_idx in range(S.deg[j])])
         thisPossibleEdge = [str(i) + '__' + str(j), str(j) + '__' + str(i)]
         ToMatch.add_nodes_from(thisPossibleEdge)
-        ToMatch.add_edge(thisPossibleEdge[0], thisPossibleEdge[1], weight=0)
+        ToMatch.add_edge(thisPossibleEdge[0], thisPossibleEdge[1], weight=S.deg[i]*S.deg[j])
         for node_copy_idx in range(S.deg[i]):
             ToMatch.add_edge(thisPossibleEdge[0], str(i)+'_'+str(node_copy_idx), weight=S.deg[i]*S.deg[j])
         for node_copy_idx in range(S.deg[j]):
@@ -51,7 +51,7 @@ for i in range(S.n):
 # ToMatch.es['weight'] = edge_weights
 # G = ToMatch.to_networkx()
 
-matching = nx.max_weight_matching(ToMatch, maxcardinality=True)
+matching = nx.max_weight_matching(ToMatch, maxcardinality=False)
 matchingDict = {}
 for matched_edge in matching:
     e, v = -1, -1
