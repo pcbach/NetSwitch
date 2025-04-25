@@ -70,15 +70,20 @@ for matched_edge in matching:
         1
 
 optimalGraph = nx.Graph()
+optimalGraph.add_nodes_from(range(S.n))
 for e in matchingDict:
     if matchingDict[e] == 2:
         optimalGraph.add_edge(e[0], e[1])
 
-print(sorted([d for v, d in optimalGraph.degree()], reverse=True))
-print(list(S.deg))
-sorted_nodes = sorted(optimalGraph, key=lambda x: (optimalGraph.degree(x)), reverse=True)
-adj_matrix = nx.adjacency_matrix(optimalGraph, nodelist=sorted_nodes).toarray()
-print(adj_matrix)
+#print(sorted([d for v, d in optimalGraph.degree()], reverse=True))
+#print(list(S.deg))
+optG_degseq = np.array(sorted([d for v, d in optimalGraph.degree()], reverse=True))
+#print (S.deg.size, optG_degseq.size)
+print(np.sum(np.abs(optG_degseq - S.deg)))
+#sorted_nodes = sorted(optimalGraph, key=lambda x: (optimalGraph.degree(x), np.sum([optimalGraph.degree(i) for i in optimalGraph.neighbors(x)])), reverse=True)
+#print([optimalGraph.degree(i) for i in optimalGraph.neighbors(0)])
+#adj_matrix = nx.adjacency_matrix(optimalGraph, nodelist=sorted_nodes).toarray()
+adj_matrix = nx.adjacency_matrix(optimalGraph).toarray()
 plt.imshow(adj_matrix)
 plt.show()
 
