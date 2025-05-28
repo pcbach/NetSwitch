@@ -3,17 +3,19 @@ from scipy.sparse.linalg import eigsh
 from sympy.strategies.core import switch
 import itertools
 import random
+import igraph as ig
 
 
 class NetSwitch:
 
-    def __init__(self, G):
+    def __init__(self, G, pos_only=True):
         self.A = np.array(G.get_adjacency().data, dtype=np.int8)
         self.n = np.shape(self.A)[0]
         self.deg = self.degree_seq()
         self.sort_adj()
         self.countonce = True
-        self.checkercount_matrix()
+        self.pos_only = pos_only    # False for both positive and negative switching
+        self.checkercount_matrix()  # Counts the checkerboards for all pairs of nodes
         self.swt_done = 0
 
     def sort_adj(self):
@@ -25,30 +27,21 @@ class NetSwitch:
         ''' Builds a matrix N, where element N[i,j] counts
         NEGATIVE checkerboards in row-pair (i, j) of the adjacency matrix A. '''
 
-        self.N = np.zeros((self.n, self.n), dtype=np.int64)
+        self.pc = np.zeros((self.n, self.n), dtype=np.int64)
+        if not self.pos_only:
+            self.nc = np.zeros((self.n, self.n), dtype=np.int64)
+
         for i in range(self.n - 1):
             for j in range(i + 1, self.n):
-                self.N[i, j] = self.count_rowpair_checkers_fast(i, j) - (0 if count_upper else self.count_rowpair_checkers_fast_upperswt(i, j))
-        self.Nrow = np.sum(self.N, axis=1)
+                if self.pos_only:
+                    self.pc[i, j] = self.count_rowpair_checkers_fast(i, j) - (0 if count_upper else self.count_rowpair_checkers_fast_upperswt(i, j))
+                    self.pc_rows = np.sum(self.pc, axis=1)
+                else:
+                    self.pc[i, j], self.nc[i, j] = np.array(self.count_rowpair_checkers_fast(i, j)) - np.array((0 if count_upper else self.count_rowpair_checkers_fast_upperswt(i, j)))
+                    self.pc_rows = np.sum(self.pc, axis=1)
+                    self.nc_rows = np.sum(self.nc, axis=1)
 
-    def count_rowpair_checkers(self, i, j):
-        ''' For a pair (i, j) of rows in adjacency matrix A (i<j),
-        checks all columns of A and counts all NEGATIVE checkerboards
-        with coordinate (i, j, k, l).
-        This is following the paper's implementation. '''
-
-        r, s = 0, 0
-        k_init = 0 if self.countonce is False else i + 1
-        for k in range(k_init, self.n):
-            if k == i or k == j:
-                continue
-            if self.A[i, k] == 0 and self.A[j, k] == 1:
-                r += 1
-            if self.A[i, k] == 1 and self.A[j, k] == 0:
-                s += r
-        return s
-
-    def count_rowpair_checkers_fast(self, i, j):
+    def count_rowpair_checkers_fast(self, i, j, pos=True):
         ''' Alternative to self.count_rowpair_checkers(i, j)
         Here the main operation is vectorized with Numpy for speed.
         For a pair (i, j) of rows in adjacency matrix A (i<j),
@@ -57,12 +50,23 @@ class NetSwitch:
 
         all_checkerboard_sides = i + 1 + np.nonzero(self.A[i, i + 1:] ^ self.A[j, i + 1:])[0]
         all_checkerboard_sides = np.delete(all_checkerboard_sides, np.where(all_checkerboard_sides == j))
-        all_rightsides = np.nonzero(self.A[i, all_checkerboard_sides])[0]
-        if all_rightsides.size == 0:
-            return int(0)
+        all_rightsides_pos = np.nonzero(self.A[i, all_checkerboard_sides])[0]
+        if all_rightsides_pos.size == 0:
+            pos_count = int(0)
         else:
-            cumsum_checkers = np.cumsum(np.diff(all_rightsides) - 1)
-            return int(all_rightsides[0] * (cumsum_checkers.size + 1) + np.sum(cumsum_checkers))
+            cumsum_checkers = np.cumsum(np.diff(all_rightsides_pos) - 1)
+            pos_count = int(all_rightsides_pos[0] * (cumsum_checkers.size + 1) + np.sum(cumsum_checkers))
+
+        if not self.pos_only:
+            all_rightsides_neg = np.nonzero(1 - self.A[i, all_checkerboard_sides])[0]
+            if all_rightsides_neg.size == 0:
+                neg_count = int(0)
+            else:
+                cumsum_checkers = np.cumsum(np.diff(all_rightsides_neg) - 1)
+                neg_count = int(all_rightsides_neg[0] * (cumsum_checkers.size + 1) + np.sum(cumsum_checkers))
+            return pos_count, neg_count
+
+        return pos_count
 
     def count_rowpair_checkers_fast_upperswt(self, i, j):
         '''Similar to self.count_rowpair_checkers_fast(i, j)
@@ -72,26 +76,49 @@ class NetSwitch:
             i, j = j, i
         all_checkerboard_sides = j + 1 + np.nonzero(self.A[i, j + 1:] ^ self.A[j, j + 1:])[0]
         all_checkerboard_sides = np.delete(all_checkerboard_sides, np.where(all_checkerboard_sides == j))
-        all_rightsides = np.nonzero(self.A[i, all_checkerboard_sides])[0]
-        if all_rightsides.size == 0:
-            return int(0)
+        all_rightsides_pos = np.nonzero(self.A[i, all_checkerboard_sides])[0]
+        if all_rightsides_pos.size == 0:
+            pos_count = int(0)
         else:
-            cumsum_checkers = np.cumsum(np.diff(all_rightsides) - 1)
-            return int(all_rightsides[0] * (cumsum_checkers.size + 1) + np.sum(cumsum_checkers))
+            cumsum_checkers = np.cumsum(np.diff(all_rightsides_pos) - 1)
+            pos_count = int(all_rightsides_pos[0] * (cumsum_checkers.size + 1) + np.sum(cumsum_checkers))
 
-    def update_N(self, swt, count_upper=True):
+        if not self.pos_only:
+            all_rightsides_neg = np.nonzero(self.A[i, all_checkerboard_sides])[0]
+            if all_rightsides_neg.size == 0:
+                neg_count = int(0)
+            else:
+                cumsum_checkers = np.cumsum(np.diff(all_rightsides_neg) - 1)
+                neg_count = int(all_rightsides_neg[0] * (cumsum_checkers.size + 1) + np.sum(cumsum_checkers))
+            return pos_count, neg_count
+
+        return pos_count
+
+    def update_count_mat(self, swt, count_upper=True):
         ''' Given a checkerboard (i, j, k, l) is switched,
         updates the matrix N that holds counts of checkerboards in matrix A '''
 
         for ref_row in swt:
             for row in range(ref_row):
-                self.N[row, ref_row] = self.count_rowpair_checkers_fast(row, ref_row) - (0 if count_upper else self.count_rowpair_checkers_fast_upperswt(row, ref_row))
-                self.Nrow[row] = np.sum(self.N[row, :])
+                checker_count = np.array(self.count_rowpair_checkers_fast(row, ref_row)) - np.array((0 if count_upper else self.count_rowpair_checkers_fast_upperswt(row, ref_row)))
+                if self.pos_only:
+                    self.pc[row, ref_row] = checker_count
+                    self.pc_rows[row] = np.sum(self.pc[row, :])
+                else:
+                    self.pc[row, ref_row], self.nc[row, ref_row] = checker_count
+                    self.pc_rows[row] = np.sum(self.pc[row, :])
+                    self.nc_rows[row] = np.sum(self.nc[row, :])
             for row in range(ref_row + 1, self.n):
-                self.N[ref_row, row] = self.count_rowpair_checkers_fast(ref_row, row) - (0 if count_upper else self.count_rowpair_checkers_fast_upperswt(ref_row, row))
-                self.Nrow[ref_row] = np.sum(self.N[ref_row, :])
+                checker_count = np.array(self.count_rowpair_checkers_fast(ref_row, row)) - np.array((0 if count_upper else self.count_rowpair_checkers_fast_upperswt(ref_row, row)))
+                if self.pos_only:
+                    self.pc[ref_row, row] = checker_count
+                else:
+                    self.pc[ref_row, row], self.nc[ref_row, row] = checker_count
+            self.pc_rows[ref_row] = np.sum(self.pc[ref_row, :])
+            if not self.pos_only:
+                self.nc_rows[ref_row] = np.sum(self.nc[ref_row, :])
 
-    def update_Nrow(self, rowi):
+    def update_count_mat_row(self, rowi):
         self.Nrow[rowi] = np.sum(self.N[rowi, :])
 
     def update_B(self, swt):
@@ -115,11 +142,18 @@ class NetSwitch:
                     lft, rgt = self.largest_kl(ref_row, row)
                     self.B[diag_idx] = (row - ref_row) * (rgt - lft)
 
-    def total_checkers(self):
+    def total_checkers(self, pos=None, both=False):
         """Returns the total number of checkerboards left in the adjacency matrix"""
-        return np.sum(self.Nrow)
+        if self.pos_only:
+            return np.sum(self.pc_rows)
+        elif both:
+            return np.sum(self.pc_rows) + np.sum(self.nc_rows)
+        else:
+            if pos is None:
+                raise 'To count the total number of checkerboards their direction needs to be specified!'
+            return np.sum(self.pc_rows) if pos else np.sum(self.nc_rows)
 
-    def switch(self, swt, update_N=True, update_B=False):
+    def switch(self, swt, update_counts=True, update_B=False):
         """Switches a selected checkrboard in matrix A and calls for an update in checkerboard count
         given the coordinates (i, j, k, l), the checkerboars is at (i, k), (i, l), (j, k), (j, l)
         and the mirrored coordinates (k, i), (l, i), (k, j), (l, j) in matrix A"""
@@ -128,23 +162,33 @@ class NetSwitch:
             j, k], 1 - self.A[j, l]
         self.A[k, i], self.A[l, i], self.A[k, j], self.A[l, j] = 1 - self.A[k, i], 1 - self.A[l, i], 1 - self.A[
             k, j], 1 - self.A[l, j]
-        if update_N:
-            self.update_N(swt)
+        if update_counts:
+            self.update_count_mat(swt)
         if update_B:
             self.update_B(swt)
 
     def find_random_checker(self, pos=True):
-        if not pos:
-            raise Exception("Finding random negative checkerboards is not implemented yet!!!")
-
+        ''' Using the count matrices, draws a checkerboard at random
+        :param pos: True (False) to find a negative (positive) checkerboard configuration at random
+        :return: A list of four different nodes i, j, k, l determining the switch '''
+        if not pos and self.pos_only:
+            raise Exception("The object is not initiated for Negative switching!!!")
+        elif pos:
+            count_mat = self.pc
+            count_mat_row = self.pc_rows
+            shifter = 0
+        elif not pos:
+            count_mat = self.nc
+            count_mat_row = self.nc_rows
+            shifter = 1
         # FIND ROW I
-        swt_idx = np.random.randint(np.sum(self.Nrow)) + 1
-        Nrow_Cumsum = self.Nrow.cumsum()
+        swt_idx = np.random.randint(np.sum(count_mat_row)) + 1
+        Nrow_Cumsum = count_mat_row.cumsum()
         rnd_i = np.argwhere(Nrow_Cumsum >= swt_idx)[0][0]
         swt_idx -= 0 if (rnd_i == 0) else Nrow_Cumsum[rnd_i - 1]
 
         # FIND ROW J
-        iRow_Cumsum = np.cumsum(self.N[rnd_i, rnd_i + 1:])
+        iRow_Cumsum = np.cumsum(count_mat[rnd_i, rnd_i + 1:])
         rnd_j = np.argwhere(iRow_Cumsum >= swt_idx)[0][0]
         swt_idx -= 0 if (rnd_j == 0) else iRow_Cumsum[rnd_j - 1]
         rnd_j += rnd_i + 1
@@ -152,12 +196,12 @@ class NetSwitch:
         # FIND COLUMNS K & L
         all_checkerboard_sides = rnd_i + 1 + np.nonzero(self.A[rnd_i, rnd_i + 1:] ^ self.A[rnd_j, rnd_i + 1:])[0]
         all_checkerboard_sides = np.delete(all_checkerboard_sides, np.where(all_checkerboard_sides == rnd_j))
-        all_rightsides = np.nonzero(self.A[rnd_i, all_checkerboard_sides])[0]
+        all_rightsides = np.nonzero(self.A[rnd_i, all_checkerboard_sides] - shifter)[0]
         cumsum_checkers = np.cumsum(np.cumsum(np.insert(np.diff(all_rightsides) - 1, 0, all_rightsides[0])))
         rnd_l = np.argwhere(cumsum_checkers >= swt_idx)[0][0]
         swt_idx -= 0 if (rnd_l == 0) else cumsum_checkers[rnd_l - 1]
         rnd_l = all_checkerboard_sides[all_rightsides[rnd_l]]
-        rnd_k = all_checkerboard_sides[np.nonzero(self.A[rnd_j, all_checkerboard_sides])[0][swt_idx - 1]]
+        rnd_k = all_checkerboard_sides[np.nonzero(self.A[rnd_j, all_checkerboard_sides] - shifter)[0][swt_idx - 1]]
 
         return (rnd_i, rnd_j, rnd_k, rnd_l)
 
@@ -284,18 +328,20 @@ class NetSwitch:
         #print(self.B, self.total_checkers())
         return best_swt
 
-    def switch_A(self, alg='RAND', count=-1):
+    def switch_A(self, alg='RAND', count=-1, pos=None):
         """Performs a number of switchings with a specified algorithm on the adjacency matrix
         The number of switchings to perform is input by the 'count' argument
         count=-1 results in continous switchings until no checkerboard is left
         alg='RAND': selects a switching checkerboard at random"""
+        if (not self.pos_only) and (pos is None):
+            raise 'Switch direction has to be specified!!!'
         swt_num = 0
         if count == -1:
-            count = self.total_checkers()
-        while count > 0 and self.total_checkers() > 0:
+            count = self.total_checkers(pos=pos)
+        while count > 0 and self.total_checkers(pos=pos) > 0:
             match alg:
                 case 'RAND':
-                    swt = self.find_random_checker()
+                    swt = self.find_random_checker(pos=pos)
                 case 'ORDR':
                     if self.swt_done == 0:
                         self.i, self.j = 0, self.n - 1
@@ -383,7 +429,10 @@ class NetSwitch:
             swt_num += 1
             count -= 1
 
-        return swt_num if self.total_checkers() == 0 else -1
+        if self.pos_only:
+            return swt_num if self.total_checkers() == 0 else -1
+        else:
+            return swt_num
 
     def XBS(self, pos_p=0.5, count=1, force_update_N = False):
         if pos_p == 1.0 and self.swt_done==0:
@@ -464,7 +513,7 @@ class NetSwitch:
         '''Returns the degree sequence of a graph from its adjacency matrix.'''
         return np.sum(self.A, axis=1)
 
-    def assortativity_coeff(self):
+    def assortativity_coeff(self, zagreb=False):
         '''Calculates the assortativity coefficient for a graph
         from its binary adjacncy matrix.
         Calculations based on [PHYSICAL REVIEW E 84, 047101 (2011)].'''
@@ -473,7 +522,7 @@ class NetSwitch:
         M2 = np.sum(self.deg[all_i] * self.deg[all_j]) / m
         di1 = (np.sum(self.deg[all_i] + self.deg[all_j]) / (m * 2.0)) ** 2
         di2 = np.sum(self.deg[all_i] ** 2 + self.deg[all_j] ** 2) / (m * 2.0)
-        return (M2 - di1) / (di2 - di1)
+        return (M2 - di1) / (di2 - di1) if (not zagreb) else ((M2 - di1) / (di2 - di1), M2)
 
     def laplacian(self):
         return np.diag(self.deg) - self.A
@@ -489,3 +538,20 @@ class NetSwitch:
     def lev(self):
         eig_val = eigsh(self.A.astype(float), k=1, which='LM', return_eigenvectors=False)[0]
         return eig_val
+
+    def count_rowpair_checkers(self, i, j):
+        ''' For a pair (i, j) of rows in adjacency matrix A (i<j),
+        checks all columns of A and counts all NEGATIVE checkerboards
+        with coordinate (i, j, k, l).
+        This is following the paper's implementation. '''
+
+        r, s = 0, 0
+        k_init = 0 if self.countonce is False else i + 1
+        for k in range(k_init, self.n):
+            if k == i or k == j:
+                continue
+            if self.A[i, k] == 0 and self.A[j, k] == 1:
+                r += 1
+            if self.A[i, k] == 1 and self.A[j, k] == 0:
+                s += r
+        return s

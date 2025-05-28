@@ -6,9 +6,9 @@ import os.path
 import matplotlib.pyplot as plt
 
 n = 1000
-p = 0.2
+p = 0.05
 swt_batch_count = 100
-model = 'BA'
+model = 'ER'
 
 res_fname = "NetPosSwitchingResults/POS_"+model+"_N"+str(int(n))+"_p"+str(int(p*100))+"_bch"+str(swt_batch_count)+".pkl"
 print(res_fname)
