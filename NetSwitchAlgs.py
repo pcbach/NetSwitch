@@ -6,12 +6,47 @@ import random
 import igraph as ig
 
 
-class NetSwitch:
+class NetMat:
 
-    def __init__(self, G, pos_only=True):
-        self.A = np.array(G.get_adjacency().data, dtype=np.int8)
+    def __init__(self, g):
+        self.A = np.array(g.get_adjacency().data, dtype=np.int8)
         self.n = np.shape(self.A)[0]
         self.deg = self.degree_seq()
+
+    def degree_seq(self):
+        '''Returns the degree sequence of a graph from its adjacency matrix.'''
+        return np.sum(self.A, axis=1)
+
+    def assortativity_coeff(self, zagreb=False):
+        '''Calculates the assortativity coefficient for a graph
+        from its binary adjacncy matrix.
+        Calculations based on [PHYSICAL REVIEW E 84, 047101 (2011)].'''
+        m = np.sum(self.A) / 2.0
+        all_i, all_j = np.where(np.triu(self.A))
+        M2 = np.sum(self.deg[all_i] * self.deg[all_j]) / m
+        di1 = (np.sum(self.deg[all_i] + self.deg[all_j]) / (m * 2.0)) ** 2
+        di2 = np.sum(self.deg[all_i] ** 2 + self.deg[all_j] ** 2) / (m * 2.0)
+        return (M2 - di1) / (di2 - di1) if (not zagreb) else ((M2 - di1) / (di2 - di1), M2)
+
+    def laplacian(self):
+        return np.diag(self.deg) - self.A
+    def normalized_laplacian(self):
+        Dm05= np.diag(1 / np.sqrt(self.deg))
+        return np.matmul(np.matmul(Dm05, self.laplacian()), Dm05)
+    def l2(self, normed=True):
+        if normed:
+            eig_vals = eigsh(self.normalized_laplacian(), k=2, which='SM', return_eigenvectors=False)
+        else:
+            eig_vals = eigsh(self.laplacian(), k=2, which='SM', return_eigenvectors=False)
+        return eig_vals[0]
+    def lev(self):
+        eig_val = eigsh(self.A.astype(float), k=1, which='LM', return_eigenvectors=False)[0]
+        return eig_val
+
+class NetSwitch(NetMat):
+
+    def __init__(self, ig_graph, pos_only=True):
+        super().__init__(ig_graph)
         self.sort_adj()
         self.countonce = True
         self.pos_only = pos_only    # False for both positive and negative switching
@@ -508,36 +543,6 @@ class NetSwitch:
             return True
         else:
             return HH_adj
-
-    def degree_seq(self):
-        '''Returns the degree sequence of a graph from its adjacency matrix.'''
-        return np.sum(self.A, axis=1)
-
-    def assortativity_coeff(self, zagreb=False):
-        '''Calculates the assortativity coefficient for a graph
-        from its binary adjacncy matrix.
-        Calculations based on [PHYSICAL REVIEW E 84, 047101 (2011)].'''
-        m = np.sum(self.A) / 2.0
-        all_i, all_j = np.where(np.triu(self.A))
-        M2 = np.sum(self.deg[all_i] * self.deg[all_j]) / m
-        di1 = (np.sum(self.deg[all_i] + self.deg[all_j]) / (m * 2.0)) ** 2
-        di2 = np.sum(self.deg[all_i] ** 2 + self.deg[all_j] ** 2) / (m * 2.0)
-        return (M2 - di1) / (di2 - di1) if (not zagreb) else ((M2 - di1) / (di2 - di1), M2)
-
-    def laplacian(self):
-        return np.diag(self.deg) - self.A
-    def normalized_laplacian(self):
-        Dm05= np.diag(1 / np.sqrt(self.deg))
-        return np.matmul(np.matmul(Dm05, self.laplacian()), Dm05)
-    def l2(self, normed=True):
-        if normed:
-            eig_vals = eigsh(self.normalized_laplacian(), k=2, which='SM', return_eigenvectors=False)
-        else:
-            eig_vals = eigsh(self.laplacian(), k=2, which='SM', return_eigenvectors=False)
-        return eig_vals[0]
-    def lev(self):
-        eig_val = eigsh(self.A.astype(float), k=1, which='LM', return_eigenvectors=False)[0]
-        return eig_val
 
     def count_rowpair_checkers(self, i, j):
         ''' For a pair (i, j) of rows in adjacency matrix A (i<j),

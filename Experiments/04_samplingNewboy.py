@@ -1,13 +1,13 @@
 from NetSwitchAlgs import *
 import matplotlib.pyplot as plt
 
-target_r = 0.8
-sigma = 0.01
+target_r = -0.3
+sigma = 0.001
 net = ig.Graph.Erdos_Renyi(n=50, p=.2)
 Snet = NetSwitch(net, pos_only=False)
 
 r_seq = []
-for swt_no in range(10000):
+for swt_no in range(2000):
     cur_r = Snet.assortativity_coeff()
     r_seq.append(cur_r)
     delta_r = target_r - cur_r
