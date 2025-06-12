@@ -31,7 +31,7 @@ class NetMat:
     def laplacian(self):
         return np.diag(self.deg) - self.A
     def normalized_laplacian(self):
-        Dm05= np.diag(1 / np.sqrt(self.deg))
+        Dm05 = np.diag(1 / np.sqrt(self.deg))
         return np.matmul(np.matmul(Dm05, self.laplacian()), Dm05)
     def l2(self, normed=True):
         if normed:
@@ -49,7 +49,7 @@ class NetSwitch(NetMat):
         super().__init__(ig_graph)
         self.sort_adj()
         self.countonce = True
-        self.pos_only = pos_only    # False for both positive and negative switching
+        self.pos_only = pos_only  # False for both positive and negative switching
         self.checkercount_matrix()  # Counts the checkerboards for all pairs of nodes
         self.swt_done = 0
 
@@ -223,7 +223,7 @@ class NetSwitch(NetMat):
         swt_idx -= 0 if (rnd_i == 0) else Nrow_Cumsum[rnd_i - 1]
 
         # FIND ROW J
-        iRow_Cumsum = np.cumsum(count_mat[rnd_i, rnd_i + 1:])
+        iRow_Cumsum = np.cumsum(count_mat[rnd_i, rnd_i + 1 :])
         rnd_j = np.argwhere(iRow_Cumsum >= swt_idx)[0][0]
         swt_idx -= 0 if (rnd_j == 0) else iRow_Cumsum[rnd_j - 1]
         rnd_j += rnd_i + 1
@@ -392,7 +392,7 @@ class NetSwitch(NetMat):
                         cur_i, cur_j = self.diag2coord(self.block_idx)
                         if self.N[cur_i, cur_j] == 0:
                             self.block_idx += 1
-                            if self.block_idx == (self.n**2 - self.n)/2:
+                            if self.block_idx == (self.n**2 - self.n) / 2:
                                 self.block_idx = 0
                         else:
                             self.batch_switch(cur_i, cur_j)
@@ -426,7 +426,7 @@ class NetSwitch(NetMat):
 
                 case 'BEST':
                     if self.swt_done == 0:
-                        self.B = np.zeros(int(self.n * (self.n-1) / 2))
+                        self.B = np.zeros(int(self.n * (self.n - 1) / 2))
                     swt = self.next_best_swt()
                 case 'GRDY':
                     swt = self.find_random_checker()
@@ -434,7 +434,7 @@ class NetSwitch(NetMat):
                     search_block = 0
                     while True:
                         new_k, new_l = self.largest_kl(i, j)
-                        if new_k == k and new_l ==l:
+                        if new_k == k and new_l == l:
                             search_block += 1
                             if search_block == 2:
                                 break
@@ -449,7 +449,7 @@ class NetSwitch(NetMat):
                         else:
                             i, j = new_i, new_j
                             search_block = 0
-                    #print(swt, i, j, k, l)
+                    # print(swt, i, j, k, l)
                     swt = i, j, k, l
                 case _:
                     raise Exception("Undefined switching algorithm!!!")
@@ -510,7 +510,7 @@ class NetSwitch(NetMat):
                 self.swt_done += 1
                 if pos_p == 1.0 or force_update_N:
                     self.update_N(swt, count_upper=False)
-        return swt_num if (pos_p==1.0 and self.total_checkers() == 0) else -1
+        return swt_num if (pos_p == 1.0 and self.total_checkers() == 0) else -1
 
     def Havel_Hakimi(self, replace_adj=False):
         '''Havel-Hakimi Algorithm solution for
