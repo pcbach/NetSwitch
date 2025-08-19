@@ -1,7 +1,7 @@
 from MatSamp import *
 import matplotlib.pyplot as plt
 import igraph as ig
-import pickle
+import sys
 import json
 import multiprocessing as mp
 import time
@@ -20,6 +20,7 @@ plt.rcParams.update(
 
 graph_des = namedtuple("graph_des", ["type", "n", "k", "npseed", "seed"])
 des = graph_des("None", "None", "None", "None", "None")
+runid = 0
 
 
 def bilinear_interpolation(
@@ -67,9 +68,10 @@ def gaussian_kernel(size=3, sigma=1.0):
     return kernel
 
 
-k_size = 3
+k_size = 1
 kernel = gaussian_kernel(size=k_size, sigma=0.5)
 print(kernel)
+
 
 def logsumlog(A):
     A_max = np.ma.max(A)
@@ -94,7 +96,7 @@ def updater(
     S_view = np.frombuffer(S.get_obj(), dtype=np.float64)
     H_view = np.frombuffer(H.get_obj(), dtype=np.int32)
     H_star = np.zeros(bin_cnt_q*bin_cnt_r)
-    f = 2 ** (4)
+    f = 2 ** (1)
     samples = 0
     finished = 0
     tunnelflag = np.zeros(sampler_num)
@@ -102,7 +104,12 @@ def updater(
     max_q = -1e9
     tunnel = 0
     latest_tunnel = 0
-
+    H_star_cnt = 0
+    H_star_min = 1e9
+    H_star_sum = 0
+    cover_H_view = np.sum(H_view)
+    cover_H_star = 0
+    reset_check = 0
     while finished < sampler_num:
         data = q.get()
 
@@ -124,19 +131,47 @@ def updater(
             min_q = min(min_q, idx_q)
             max_q = max(max_q, idx_q)
 
-            H_view[idx] += 1
-            H_star[idx] += 1
             samples += 1
+            cover_H_view += int(H_view[idx] == 0)
+            H_view[idx] += 1
+            cover_H_star += int(H_view[idx] == 1 and H_star[idx] == 0)
+            H_star[idx] += 1
+            # if tunnel >= 1 and H_star_sum >= cover_H_view * 10:
+            #     H_star = {}
+            #     H_star_sum = 0
+            #     H_star_min = 1e9
+            #     H_star_cnt = 0
 
-            for dr in range(-(k_size//2),(k_size//2)):
-                for dq in range(-(k_size//2),(k_size//2)):
-                    idx_r_, idx_q_ = idx_r +dr , idx_q+dq
-                    idx_ = idx_r_*bin_cnt_q+idx_q_
-                    if 0 <= idx_r_ < bin_cnt_r and 0 <= idx_q_ < bin_cnt_q and H_star[idx_] != 0:
-                        S_view[idx_] += f * kernel[(k_size//2)+dr,(k_size//2)+dq] 
+            # if not idx in H_star:
+            #     H_star[idx] = 0
+            #     H_star_cnt += 1#int(H_star[idx] == 0)
+            # H_star_sum += 1
+            # H_star_min = min(H_star.values())
+
+            if k_size > 1:
+                for dr in range(-(k_size // 2), (k_size // 2)):
+                    for dq in range(-(k_size // 2), (k_size // 2)):
+                        idx_r_, idx_q_ = idx_r + dr, idx_q + dq
+                        idx_ = idx_r_ * bin_cnt_q + idx_q_
+                        if (
+                            0 <= idx_r_ < bin_cnt_r
+                            and 0 <= idx_q_ < bin_cnt_q
+                            and H_view[idx_] != 0
+                        ):
+                            S_view[idx_] += (
+                                f * kernel[(k_size // 2) + dr, (k_size // 2) + dq]
+                            )
+            else:
+                S_view[idx] += f
             # S_view[idx] += f  # / delta_q / delta_r
 
-            if tunnel >= 1:
+            if (
+                tunnel >= 5
+                #and H_star_min / (H_star_sum / H_star_cnt) >= 0.8
+                #and H_star_sum >= cover_H_view * 9
+                and samples > reset_check
+                #and cover_H_star / cover_H_view > 0.9
+            ):
 
                 while finished < sampler_num and not q.empty():
                     data = q.get()
@@ -148,29 +183,44 @@ def updater(
                         H_star[idx] += 1
                         samples += 1
                         S_view[idx] += f
-                        for dr in range(-(k_size//2),(k_size//2)):
-                            for dq in range(-(k_size//2),(k_size//2)):
-                                idx_r_, idx_q_ = idx_r +dr , idx_q+dq
-                                idx_ = idx_r_*bin_cnt_q+idx_q_
-                                if 0 <= idx_r_ < bin_cnt_r and 0 <= idx_q_ < bin_cnt_q and H_star[idx_] != 0:
-                                    S_view[idx_] += f * kernel[(k_size//2)+dr,(k_size//2)+dq] 
+                        if k_size > 1:
+                            for dr in range(-(k_size // 2), (k_size // 2)):
+                                for dq in range(-(k_size // 2), (k_size // 2)):
+                                    idx_r_, idx_q_ = idx_r + dr, idx_q + dq
+                                    idx_ = idx_r_ * bin_cnt_q + idx_q_
+                                    if (
+                                        0 <= idx_r_ < bin_cnt_r
+                                        and 0 <= idx_q_ < bin_cnt_q
+                                        and H_view[idx_] != 0
+                                    ):
+                                        S_view[idx_] += (
+                                            f
+                                            * kernel[
+                                                (k_size // 2) + dr, (k_size // 2) + dq
+                                            ]
+                                        )
+                        else:
+                            S_view[idx] += f
 
                 tunnelflag = np.zeros(sampler_num)
                 tunnel = 0
                 latest_tunnel = 0
-                H_view[:] = 0
+                H_star[:] = 0
                 min_q = 1e9
                 max_q = -1e9
+                reset_check = samples + 1e6
+                cover_H_star = 0
 
                 f = f / 2
 
-                folder_path = "Experiments/{:s}-{:d}-{:.2f}-{:d}-{:d}".format(
-                    des.type, des.n, des.k, des.npseed, des.seed
-                )
-                os.makedirs(folder_path, exist_ok=True)
                 print("{:d}: Step size decreased, f={:.3e}".format(samples, f))
                 filename = "{:s}-{:d}-{:.2f}-{:d}-{:d}/{:d}".format(
-                    des.type, des.n, des.k, des.npseed, des.seed, samples
+                    des.type,
+                    des.n,
+                    des.k,
+                    des.npseed,
+                    des.seed,
+                    runid,
                 )
                 with open("Experiments/" + filename + ".json", "w") as ffff:
                     json.dump(
@@ -186,31 +236,26 @@ def updater(
                         ffff,
                         separators=(",", ":"),
                     )
-                if f < 2 ** (-8):
+                if f < 2 ** (-5):
                     terminate_flag.value = 0
 
-        if samples % 1e3 == 0:
-            filename = "{:s}-{:d}-{:.2f}-{:d}-{:d}".format(
-                des.type,
-                des.n,
-                des.k,
-                des.npseed,
-                des.seed,
-            )
+        # print(samples, ": ", end="")
+        if (samples < 1e7 and samples % 1e3 == 0) or (
+            samples >= 1e7 and samples % 1e7 == 0
+        ):
             print(samples, ": ", end="")
             print(
-                "{:.3e} {:.1f} {:.0f} {:.0f}".format(f, tunnel, min_q, max_q),
+                "{:.3e} {:.1f} {:.2f} {:.0f} {:.0f}".format(
+                    f, tunnel, cover_H_star / cover_H_view, min_q, max_q
+                ),
             )
-            # print(tunnelflag)
-            # # with open("Experiments/" + filename + ".pkl", "wb") as ffff:
-            # #   pickle.dump((des, S_view, H_view), ffff)=
-        if samples % 1e6 == 0 or samples == sampler_num:
-            folder_path = "Experiments/{:s}-{:d}-{:.2f}-{:d}-{:d}".format(
-                des.type, des.n, des.k, des.npseed, des.seed
-            )
-            os.makedirs(folder_path, exist_ok=True)
+        if (
+            (samples >= 1e7 and samples % 1e6 == 0)
+            or samples == sampler_num
+            or (samples < 1e7 and samples % 1e4 == 0)
+        ):
             filename = "{:s}-{:d}-{:.2f}-{:d}-{:d}/{:d}".format(
-                des.type, des.n, des.k, des.npseed, des.seed, samples
+                des.type, des.n, des.k, des.npseed, des.seed, runid
             )
             with open("Experiments/" + filename + ".json", "w") as ffff:
                 json.dump(
@@ -253,6 +298,7 @@ def sampler(
     bin_cnt_r = len(bin_centers_r)
     bin_cnt_q = len(bin_centers_q)
     rng = default_rng()
+    reject = 0
 
     while iter_cnt and terminate_flag.value:
 
@@ -274,8 +320,8 @@ def sampler(
             rho_cur = 1
             posswt = True
         else:
-            #rho_cur = 0.5
-            rho_cur = (kappa / 2 - qcur) / kappa
+            rho_cur = 0.5
+            # rho_cur = (kappa / 2 - qcur) / kappa
             p_posswt = rng.random()
             posswt = p_posswt < rho_cur
 
@@ -294,8 +340,8 @@ def sampler(
         elif nsnxt == 0:
             rho_nxt = 1
         else:
-            #rho_nxt = 0.5
-            rho_nxt = (kappa / 2 - qnxt) / kappa
+            rho_nxt = 0.5
+            # rho_nxt = (kappa / 2 - qnxt) / kappa
 
         curidx_r = np.searchsorted(bin_centers_r, rcur, side="right") - 1
         nxtidx_r = np.searchsorted(bin_centers_r, rnxt, side="right") - 1
@@ -343,8 +389,12 @@ def sampler(
 
         # switch back
         if np.log(np.random.rand()) > Scur - Snxt + gnxt - gcur:
+            # print(Scur,Snxt,gcur,gnxt)
             SNet.switch(swt)
             ps, ns = pscur, nscur
+            reject += 1
+        else:
+            reject = 0
 
         idx_r = (
             np.searchsorted(bin_edges_r, SNet.assortativity_coeff(), side="right") - 1
@@ -352,11 +402,11 @@ def sampler(
         idx_q = np.searchsorted(bin_edges_q, (ns - ps) / (ns + ps), side="right") - 1
 
         iter_cnt -= 1
-
         q.put(
             (
                 pid,
-                idx_r * bin_cnt_q + idx_q,idx_r,
+                idx_r * bin_cnt_q + idx_q,
+                idx_r,
                 idx_q,
             )
         )
@@ -367,18 +417,49 @@ def sampler(
 if __name__ == "__main__":
     random.seed(1)
     np.random.seed(1)
-    n = 128
+    n = int(sys.argv[1])  # 1024
     p = np.round(1.1 * np.log(n) / n, 2)
-    net = ig.Graph.Erdos_Renyi(n=n, p=p)
-    des = graph_des("ER", n, p, 1, 1)
+    if sys.argv[2] == "ER":
+        net = ig.Graph.Erdos_Renyi(n=n, p=p)
+        des = graph_des("ER", n, p, 1, 1)
+    else:
+        raise "Not implenented"
+
+    folder_path = "Experiments/{:s}-{:d}-{:.2f}-{:d}-{:d}".format(
+        des.type, des.n, des.k, des.npseed, des.seed
+    )
+    os.makedirs(folder_path, exist_ok=True)
+
+    new_run = sys.argv[3] == "-1"
+    if new_run:
+        runid = 0
+        while True:
+            if os.path.isfile(os.path.join(folder_path, "{:d}.json".format(runid))):
+                runid += 1
+            else:
+                break
+    else:
+        runid = int(sys.argv[3])
+        with open(
+            "Experiments/{:s}-{:d}-{:.2f}-{:d}-{:d}/{:d}.json".format(
+                des.type, des.n, des.k, des.npseed, des.seed, runid
+            ),
+            "r",
+        ) as file:
+            data = json.load(file)
 
     A = ig_to_A(net)
     SNet = MatSamp(A, False)
     step = 2 * (SNet.M3 - SNet.M1)
 
-    bin_cnt_r = int(min(100, step))
-    bin_cnt_q = 100
-    print(bin_cnt_r)
+    if new_run:
+        bin_cnt_r = int(min(n * 10, step))
+        bin_cnt_q = bin_cnt_r
+    else:
+        bin_cnt_r = data["bin_cnt_r"]
+        bin_cnt_q = data["bin_cnt_q"]
+
+    # print(bin_cnt_r)
     bin_edges_r = np.linspace(-1, 1, bin_cnt_r + 1)
     bin_centers_r = (bin_edges_r[:-1] + bin_edges_r[1:]) / 2
     bin_delta_r = bin_centers_r[1] - bin_centers_r[0]
@@ -387,16 +468,23 @@ if __name__ == "__main__":
     bin_centers_q = (bin_edges_q[:-1] + bin_edges_q[1:]) / 2
     bin_delta_q = bin_centers_q[1] - bin_centers_q[0]
 
-    sample_num = 1e8
-    sampler_num = 50
+    sample_num = 1e9
+    sampler_num = 60
 
     lock = mp.Lock()
     S = mp.Array("d", bin_cnt_r * bin_cnt_q)
     H = mp.Array("i", bin_cnt_r * bin_cnt_q)
     terminate_flag = mp.Value("i", 1)
     S_view = np.frombuffer(S.get_obj(), dtype=np.float64)
-    S_view[:] = 0
-
+    H_view = np.frombuffer(H.get_obj(), dtype=np.int32)
+    if not new_run:
+        S_data = [item for row in data["S"] for item in row]
+        H_data = [np.int32(item) for row in data["H"] for item in row]
+        # print(len(H_data))
+        S_view[:] = S_data
+        H_view[:] = H_data
+    # 0/0
+    # print("Done loading")
     q = mp.Queue(maxsize=sampler_num)
 
     updater = mp.Process(
@@ -419,6 +507,9 @@ if __name__ == "__main__":
     for i in range(sampler_num):
         SNet = MatSamp(A, False)
         SNet.trackCheckerboard = True
+        for _ in range(100):
+            swt = SNet.next("rand")
+            SNet.switch(swt)
         samplers.append(
             mp.Process(
                 target=sampler,

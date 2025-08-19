@@ -58,14 +58,14 @@ fig = plt.figure(figsize=(12, 12 * height / width))
 S_2d = S.reshape(bin_cnt_r, bin_cnt_q)
 H_2d = H.reshape(bin_cnt_r, bin_cnt_q)
 
-cmap = plt.cm.magma.copy()
+cmap = plt.cm.Blues.copy()
 cmap.set_bad(color="white")
 
 H_masked = np.ma.masked_where(H_2d == 0, H_2d)
 S_masked = np.ma.masked_where(S_2d == 0, S_2d)
-#print(np.mean(H_masked), np.max(H_masked), np.min(H_masked), np.std(H_masked))
-#print(np.min(S_masked))
-#S_masked = S_masked-np.min(S_masked)+1e-9
+# print(np.mean(H_masked), np.max(H_masked), np.min(H_masked), np.std(H_masked))
+# print(np.min(S_masked))
+# S_masked = S_masked-np.min(S_masked)+1e-9
 main_ax_S = fig.add_axes(
     [
         (outer_pad + minor + pad) / width,
@@ -229,4 +229,4 @@ minor_ax_H_x.spines["right"].set_visible(False)
 # fig.align_xlabels([ax[0][1], ax[1][1]])
 # fig.align_xlabels([ax[0][2], ax[0][3]])
 # plt.tight_layout()
-plt.savefig("Experiments/mulproc_2d_1.pdf", dpi=1000)
+plt.savefig("Experiments/" + sys.argv[1] + ".pdf", dpi=1000)
